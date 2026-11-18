@@ -1,0 +1,100 @@
+name: build-ipa
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.4'
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: CodeArtsMobile
+        run: |
+          set -euo pipefail
+          xcodegen generate
+          xcodebuild -list -project CodeArtsMobile.xcodeproj
+
+      - name: Build unsigned app
+        working-directory: CodeArtsMobile
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project CodeArtsMobile.xcodeproj \
+            -scheme CodeArtsMobile \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            -quiet \
+            build
+
+      - name: Package unsigned IPA
+        working-directory: CodeArtsMobile
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" -print -quit)
+          echo "app: $APP_PATH"
+          test -n "$APP_PATH"
+          rm -rf Payload CodeArtsMobile-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry CodeArtsMobile-unsigned.ipa Payload
+          ls -lh CodeArtsMobile-unsigned.ipa
+          shasum -a 256 CodeArtsMobile-unsigned.ipa | tee CodeArtsMobile-unsigned.ipa.sha256
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            CodeArtsMobile/build/Build/Products/Release-iphoneos
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CodeArtsMobile-unsigned-ipa
+          path: |
+            CodeArtsMobile/CodeArtsMobile-unsigned.ipa
+            CodeArtsMobile/CodeArtsMobile-unsigned.ipa.sha256
+          retention-days: 30
+
+      - name: Publish IPA to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: 码道 iOS 客户端（未签名 IPA）
+          body: |
+            自动构建的未签名 IPA，iOS 16.0+。
+
+            安装方式：下载后使用 AltStore / Sideloadly 等工具用你自己的 Apple ID 自签，再安装到 iPhone。
+            未签名包无法直接双击安装，也无法直接上架 App Store。
+
+            本应用为第三方外壳，通过 WKWebView 承载华为云码道 CodeArts 官方 Web 端。
+          files: |
+            CodeArtsMobile/CodeArtsMobile-unsigned.ipa
+            CodeArtsMobile/CodeArtsMobile-unsigned.ipa.sha256
+          allow_updates: true
+          make_latest: true
