@@ -1,0 +1,57 @@
+workflows:
+  ios-unsigned:
+    name: Build unsigned IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 40
+    environment:
+      xcode: latest
+      vars:
+        PROJECT_DIR: CodeArtsMobile
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          set -e
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+      - name: Generate Xcode project
+        script: |
+          set -e
+          cd "$PROJECT_DIR"
+          xcodegen generate
+          xcodebuild -list -project CodeArtsMobile.xcodeproj
+      - name: Build unsigned app
+        script: |
+          set -e
+          cd "$PROJECT_DIR"
+          xcodebuild \
+            -project CodeArtsMobile.xcodeproj \
+            -scheme CodeArtsMobile \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            -quiet \
+            build
+      - name: Package IPA
+        script: |
+          set -e
+          cd "$PROJECT_DIR"
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" -print -quit)
+          test -n "$APP_PATH"
+          rm -rf Payload CodeArtsMobile-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry CodeArtsMobile-unsigned.ipa Payload
+          ls -lh CodeArtsMobile-unsigned.ipa
+    artifacts:
+      - CodeArtsMobile/CodeArtsMobile-unsigned.ipa
+    publishing:
+      email:
+        recipients:
+          - your@email.com
+        notify:
+          success: true
+          failure: true
