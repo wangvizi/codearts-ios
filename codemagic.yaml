@@ -48,10 +48,3 @@ workflows:
           ls -lh CodeArtsMobile-unsigned.ipa
     artifacts:
       - CodeArtsMobile/CodeArtsMobile-unsigned.ipa
-    publishing:
-      email:
-        recipients:
-          - your@email.com
-        notify:
-          success: true
-          failure: true
